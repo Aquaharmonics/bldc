@@ -327,21 +327,21 @@ static THD_FUNCTION(output_thread, arg) {
 			mc_interface_set_pid_speed(pid_rpm);
 
 			// Send the same current to the other controllers
-			if (config.multi_esc) {
-				float current = mc_interface_get_tot_current_directional_filtered();
+			// if (config.multi_esc) {
+			// 	float current = mc_interface_get_tot_current_directional_filtered();
 
-				for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
-					can_status_msg *msg = comm_can_get_status_msg_index(i);
+			// 	for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+			// 		can_status_msg *msg = comm_can_get_status_msg_index(i);
 
-					if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
-						if (fabsf(pid_rpm) > mcconf->s_pid_min_erpm) {
-							comm_can_set_current(msg->id, current);
-						} else {
-							comm_can_set_duty(msg->id, 0.0);
-						}
-					}
-				}
-			}
+			// 		if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
+			// 			if (fabsf(pid_rpm) > mcconf->s_pid_min_erpm) {
+			// 				comm_can_set_current(msg->id, current);
+			// 			} else {
+			// 				comm_can_set_duty(msg->id, 0.0);
+			// 			}
+			// 		}
+			// 	}
+			// }
 
 			// Set the previous ramping current to not get a spike when releasing
 			// PID control and to get a smooth transition.
@@ -354,184 +354,184 @@ static THD_FUNCTION(output_thread, arg) {
 
 		float current = 0;
 
-		if (config.ctrl_type == CHUK_CTRL_TYPE_CURRENT_BIDIRECTIONAL) {
-			if ((out_val > 0.0 && duty_now > 0.0) || (out_val < 0.0 && duty_now < 0.0)) {
-				current = out_val * mcconf->lo_current_motor_max_now;
-			} else {
-				current = out_val * fabsf(mcconf->lo_current_motor_min_now);
-			}
-		} else {
-			if (out_val >= 0.0 && ((is_reverse ? -1.0 : 1.0) * duty_now) > 0.0) {
-				current = out_val * mcconf->lo_current_motor_max_now;
-			} else {
-				current = out_val * fabsf(mcconf->lo_current_motor_min_now);
-			}
-		}
+		// if (config.ctrl_type == CHUK_CTRL_TYPE_CURRENT_BIDIRECTIONAL) {
+		// 	if ((out_val > 0.0 && duty_now > 0.0) || (out_val < 0.0 && duty_now < 0.0)) {
+		// 		current = 0 ;// out_val * mcconf->lo_current_motor_max_now;
+		// 	} else {
+		// 		current =0 ;// out_val * fabsf(mcconf->lo_current_motor_min_now);
+		// 	}
+		// } else {
+		// 	if (out_val >= 0.0 && ((is_reverse ? -1.0 : 1.0) * duty_now) > 0.0) {
+		// 		current = 0;// out_val * mcconf->lo_current_motor_max_now;
+		// 	} else {
+		// 		current = 0; // out_val * fabsf(mcconf->lo_current_motor_min_now);
+		// 	}
+		// }
 
 		// Find lowest RPM and highest current
-		float rpm_local = fabsf(mc_interface_get_rpm());
-		float rpm_lowest = rpm_local;
-		float current_highest = current_now;
-		float duty_highest_abs = fabsf(duty_now);
+		// float rpm_local = fabsf(mc_interface_get_rpm());
+		// float rpm_lowest = rpm_local;
+		// float current_highest = current_now;
+		// float duty_highest_abs = fabsf(duty_now);
 
-		if (config.multi_esc) {
-			for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
-				can_status_msg *msg = comm_can_get_status_msg_index(i);
+		// if (config.multi_esc) {
+		// 	for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+		// 		can_status_msg *msg = comm_can_get_status_msg_index(i);
 
-				if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
-					float rpm_tmp = fabsf(msg->rpm);
+		// 		if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
+		// 			float rpm_tmp = fabsf(msg->rpm);
 
-					if (rpm_tmp < rpm_lowest) {
-						rpm_lowest = rpm_tmp;
-					}
+		// 			if (rpm_tmp < rpm_lowest) {
+		// 				rpm_lowest = rpm_tmp;
+		// 			}
 
-					// Make the current directional
-					float msg_current = msg->current;
-					if (msg->duty < 0.0) {
-						msg_current = -msg_current;
-					}
+		// 			// Make the current directional
+		// 			float msg_current = msg->current;
+		// 			if (msg->duty < 0.0) {
+		// 				msg_current = -msg_current;
+		// 			}
 
-					if (fabsf(msg_current) > fabsf(current_highest)) {
-						current_highest = msg_current;
-					}
+		// 			if (fabsf(msg_current) > fabsf(current_highest)) {
+		// 				current_highest = msg_current;
+		// 			}
 
-					if (fabsf(msg->duty) > duty_highest_abs) {
-						duty_highest_abs = fabsf(msg->duty);
-					}
-				}
-			}
-		}
+		// 			if (fabsf(msg->duty) > duty_highest_abs) {
+		// 				duty_highest_abs = fabsf(msg->duty);
+		// 			}
+		// 		}
+		// 	}
+		// }
 
-		if (config.use_smart_rev && config.ctrl_type != CHUK_CTRL_TYPE_CURRENT_BIDIRECTIONAL) {
-			bool duty_control = false;
-			static bool was_duty_control = false;
-			static float duty_rev = 0.0;
+		// if (config.use_smart_rev && config.ctrl_type != CHUK_CTRL_TYPE_CURRENT_BIDIRECTIONAL) {
+		// 	bool duty_control = false;
+		// 	static bool was_duty_control = false;
+		// 	static float duty_rev = 0.0;
 
-			if (out_val < -0.92 && duty_highest_abs < (mcconf->l_min_duty * 1.5) &&
-					fabsf(current_highest) < (mcconf->l_current_max * mcconf->l_current_max_scale * 0.7)) {
-				duty_control = true;
-			}
+		// 	if (out_val < -0.92 && duty_highest_abs < (mcconf->l_min_duty * 1.5) &&
+		// 			fabsf(current_highest) < (mcconf->l_current_max * mcconf->l_current_max_scale * 0.7)) {
+		// 		duty_control = true;
+		// 	}
 
-			if (duty_control || (was_duty_control && out_val < -0.1)) {
-				was_duty_control = true;
+		// 	if (duty_control || (was_duty_control && out_val < -0.1)) {
+		// 		was_duty_control = true;
 
-				float goal = config.smart_rev_max_duty * -out_val;
-				utils_step_towards(&duty_rev, is_reverse ? goal : -goal,
-						config.smart_rev_max_duty * dt / config.smart_rev_ramp_time);
+		// 		float goal = config.smart_rev_max_duty * -out_val;
+		// 		utils_step_towards(&duty_rev, is_reverse ? goal : -goal,
+		// 				config.smart_rev_max_duty * dt / config.smart_rev_ramp_time);
 
-				mc_interface_set_duty(duty_rev);
+		// 		mc_interface_set_duty(duty_rev);
 
-				// Send the same duty cycle to the other controllers
-				if (config.multi_esc) {
-					for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
-						can_status_msg *msg = comm_can_get_status_msg_index(i);
+		// 		// Send the same duty cycle to the other controllers
+		// 		if (config.multi_esc) {
+		// 			for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+		// 				can_status_msg *msg = comm_can_get_status_msg_index(i);
 
-						if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
-							comm_can_set_duty(msg->id, duty_rev);
-						}
-					}
-				}
+		// 				if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
+		// 					comm_can_set_duty(msg->id, duty_rev);
+		// 				}
+		// 			}
+		// 		}
 
-				// Set the previous ramping current to not get a spike when releasing
-				// duty control.
-				prev_current = current_now;
+		// 		// Set the previous ramping current to not get a spike when releasing
+		// 		// duty control.
+		// 		prev_current = current_now;
 
-				continue;
-			}
+		// 		continue;
+		// 	}
 
-			duty_rev = duty_now;
-			was_duty_control = false;
-		}
+		// 	duty_rev = duty_now;
+		// 	was_duty_control = false;
+		// }
 
-		// Apply ramping
-		const float current_range = mcconf->l_current_max * mcconf->l_current_max_scale +
-				fabsf(mcconf->l_current_min) * mcconf->l_current_min_scale;
-		float ramp_time = fabsf(current) > fabsf(prev_current) ? config.ramp_time_pos : config.ramp_time_neg;
+		// // Apply ramping
+		// const float current_range = mcconf->l_current_max * mcconf->l_current_max_scale +
+		// 		fabsf(mcconf->l_current_min) * mcconf->l_current_min_scale;
+		// float ramp_time = fabsf(current) > fabsf(prev_current) ? config.ramp_time_pos : config.ramp_time_neg;
 
-		if (ramp_time > 0.01) {
-			const float ramp_step = ((float)OUTPUT_ITERATION_TIME_MS * current_range) / (ramp_time * 1000.0);
+		// if (ramp_time > 0.01) {
+		// 	const float ramp_step = ((float)OUTPUT_ITERATION_TIME_MS * current_range) / (ramp_time * 1000.0);
 
-			float current_goal = prev_current;
-			const float goal_tmp = current_goal;
-			utils_step_towards(&current_goal, current, ramp_step);
-			bool is_decreasing = current_goal < goal_tmp;
+		// 	float current_goal = prev_current;
+		// 	const float goal_tmp = current_goal;
+		// 	utils_step_towards(&current_goal, current, ramp_step);
+		// 	bool is_decreasing = current_goal < goal_tmp;
 
-			// Make sure the desired current is close to the actual current to avoid surprises
-			// when changing direction
-			float goal_tmp2 = current_goal;
-			if (is_reverse) {
-				if (fabsf(current_goal + current_highest) > max_current_diff) {
-					utils_step_towards(&goal_tmp2, -current_highest, 2.0 * ramp_step);
-				}
-			} else {
-				if (fabsf(current_goal - current_highest) > max_current_diff) {
-					utils_step_towards(&goal_tmp2, current_highest, 2.0 * ramp_step);
-				}
-			}
+		// 	// Make sure the desired current is close to the actual current to avoid surprises
+		// 	// when changing direction
+		// 	float goal_tmp2 = current_goal;
+		// 	if (is_reverse) {
+		// 		if (fabsf(current_goal + current_highest) > max_current_diff) {
+		// 			utils_step_towards(&goal_tmp2, -current_highest, 2.0 * ramp_step);
+		// 		}
+		// 	} else {
+		// 		if (fabsf(current_goal - current_highest) > max_current_diff) {
+		// 			utils_step_towards(&goal_tmp2, current_highest, 2.0 * ramp_step);
+		// 		}
+		// 	}
 
-			// Always allow negative ramping
-			bool is_decreasing2 = goal_tmp2 < current_goal;
-			if ((!is_decreasing || is_decreasing2) && fabsf(out_val) > 0.001) {
-				current_goal = goal_tmp2;
-			}
+		// 	// Always allow negative ramping
+		// 	bool is_decreasing2 = goal_tmp2 < current_goal;
+		// 	if ((!is_decreasing || is_decreasing2) && fabsf(out_val) > 0.001) {
+		// 		current_goal = goal_tmp2;
+		// 	}
 
-			current = current_goal;
-		}
+		// 	current = current_goal;
+		// }
 
-		prev_current = current;
+		// prev_current = current;
 
-		if (current < 0.0 && config.ctrl_type != CHUK_CTRL_TYPE_CURRENT_BIDIRECTIONAL) {
-			mc_interface_set_brake_current(current);
+		// if (current < 0.0 && config.ctrl_type != CHUK_CTRL_TYPE_CURRENT_BIDIRECTIONAL) {
+		// 	mc_interface_set_brake_current(current);
 
-			// Send brake command to all ESCs seen recently on the CAN bus
-			if (config.multi_esc) {
-				for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
-					can_status_msg *msg = comm_can_get_status_msg_index(i);
+		// 	// Send brake command to all ESCs seen recently on the CAN bus
+		// 	if (config.multi_esc) {
+		// 		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+		// 			can_status_msg *msg = comm_can_get_status_msg_index(i);
 
-					if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
-						comm_can_set_current_brake(msg->id, current);
-					}
-				}
-			}
-		} else {
-			current = is_reverse ? -current : current;
-			float current_out = current;
+		// 			if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
+		// 				comm_can_set_current_brake(msg->id, current);
+		// 			}
+		// 		}
+		// 	}
+		// } else {
+		// 	current = is_reverse ? -current : current;
+		// 	float current_out = current;
 
 			// Traction control
-			if (config.multi_esc) {
-				for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
-					can_status_msg *msg = comm_can_get_status_msg_index(i);
+			// if (config.multi_esc) {
+			// 	for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
+			// 		can_status_msg *msg = comm_can_get_status_msg_index(i);
 
-					if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
-						bool is_braking = (current > 0.0 && msg->duty < 0.0) || (current < 0.0 && msg->duty > 0.0);
+			// 		if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
+			// 			bool is_braking = (current > 0.0 && msg->duty < 0.0) || (current < 0.0 && msg->duty > 0.0);
 
-						if (config.tc && config.tc_max_diff > 1.0 && !is_braking) {
-							float rpm_tmp = fabsf(msg->rpm);
+			// 			if (config.tc && config.tc_max_diff > 1.0 && !is_braking) {
+			// 				float rpm_tmp = fabsf(msg->rpm);
 
-							float diff = rpm_tmp - rpm_lowest;
-							current_out = utils_map(diff, 0.0, config.tc_max_diff, current, 0.0);
-							if (fabsf(current_out) < mcconf->cc_min_current) {
-								current_out = 0.0;
-							}
-						}
+			// 				float diff = rpm_tmp - rpm_lowest;
+			// 				current_out = utils_map(diff, 0.0, config.tc_max_diff, current, 0.0);
+			// 				if (fabsf(current_out) < mcconf->cc_min_current) {
+			// 					current_out = 0.0;
+			// 				}
+			// 			}
 
-						comm_can_set_current(msg->id, current_out);
-					}
-				}
+			// 			comm_can_set_current(msg->id, current_out);
+			// 		}
+			// 	}
 
-				bool is_braking = (current > 0.0 && duty_now < 0.0) || (current < 0.0 && duty_now > 0.0);
+				//bool is_braking = (current > 0.0 && duty_now < 0.0) || (current < 0.0 && duty_now > 0.0);
 
-				if (config.tc && config.tc_max_diff > 1.0 && !is_braking) {
-					float diff = rpm_local - rpm_lowest;
-					current_out = utils_map(diff, 0.0, config.tc_max_diff, current, 0.0);
-					if (fabsf(current_out) < mcconf->cc_min_current) {
-						current_out = 0.0;
-					}
-				}
-			}
-
-			mc_interface_set_current(current_out);
-		}
+			// 	if (config.tc && config.tc_max_diff > 1.0 && !is_braking) {
+			// 		float diff = rpm_local - rpm_lowest;
+			// 		current_out = utils_map(diff, 0.0, config.tc_max_diff, current, 0.0);
+			// 		if (fabsf(current_out) < mcconf->cc_min_current) {
+			// 			current_out = 0.0;
+			// 		}
+			// 	}
+			// }
+					
+			//mc_interface_set_current(current_out);
+		//}
 	}
 }
 

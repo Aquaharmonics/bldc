@@ -30,7 +30,6 @@
 
 // Settings
 #define TIM_CLOCK			1000000 // Hz
-
 // Private variables
 static volatile bool m_is_running = false;
 
@@ -65,7 +64,7 @@ void servo_simple_init(void) {
 
 	TIM_ARRPreloadConfig(HW_ICU_TIMER, ENABLE);
 
-	servo_simple_set_output(0.5);
+	servo_simple_set_output(0);
 
 	TIM_Cmd(HW_ICU_TIMER, ENABLE);
 
@@ -85,20 +84,82 @@ bool servo_simple_is_running(void) {
 	return m_is_running;
 }
 
+// void servo_simple_set_output(float out) {
+// 	if (!m_is_running) {
+// 		return;
+// 	}
+
+// 	utils_truncate_number(&out, 0.0, 1.0);
+
+// 	float us = (float)SERVO_OUT_PULSE_MIN_US + out *
+// 			(float)(SERVO_OUT_PULSE_MAX_US - SERVO_OUT_PULSE_MIN_US);
+// 	us *= (float)TIM_CLOCK / 1000000.0;
+
+// 	if (HW_ICU_CHANNEL == ICU_CHANNEL_1) {
+// 		HW_ICU_TIMER->CCR1 = (uint32_t)us;
+// 	} else if (HW_ICU_CHANNEL == ICU_CHANNEL_2) {
+// 		HW_ICU_TIMER->CCR2 = (uint32_t)us;
+// 	}
+// }
+
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++original code above
+
+
+
+
+
+
+// Modified code below. This gives a PPM output with a fixed pulse width of 100 micro seconds. It takes a float value, "void servo_simple_set_output(float out) 
+//called "float" which varies from 0 to 1, and scales it to a frequecy of 0 to 2000 Hz. The frequency is then used to set the period of the timer. This 
+//drives the stepper motor drive. Direction is handled with the AUX pin.
 void servo_simple_set_output(float out) {
-	if (!m_is_running) {
-		return;
-	}
+	
+    if (!m_is_running) {
+        return;
+    }
+	
 
-	utils_truncate_number(&out, 0.0, 1.0);
+   utils_truncate_number(&out, 0, 1);
 
-	float us = (float)SERVO_OUT_PULSE_MIN_US + out *
-			(float)(SERVO_OUT_PULSE_MAX_US - SERVO_OUT_PULSE_MIN_US);
-	us *= (float)TIM_CLOCK / 1000000.0;
+	// Ensure 'out' is within [0, 1] range
+    if (out < 0) {
+        out = 0;
+    } else if (out > 1) {
+        out = 1;
+    }
 
-	if (HW_ICU_CHANNEL == ICU_CHANNEL_1) {
-		HW_ICU_TIMER->CCR1 = (uint32_t)us;
-	} else if (HW_ICU_CHANNEL == ICU_CHANNEL_2) {
-		HW_ICU_TIMER->CCR2 = (uint32_t)us;
-	}
+
+    // Calculate the frequency based on 'out' value (0 to 2 kHz)
+	uint16_t new_period;
+    if (out <= 0.05) {
+        new_period = 0;  // Set a very short period for low output values
+    } else {
+        new_period = (uint16_t)(TIM_CLOCK / (4000 * out)); // 4000 Hz is the maximum frequency for the PPM output for the stepper PPM input at 200 pule/rev to get 1200RPM
+    }
+
+
+    // uint16_t new_period = (uint16_t)(TIM_CLOCK / (2000 * out)); // 2000 Hz is the maximum frequency
+	// if (out) <=0.05, (out)=0 && (new_period)=0;
+    // Update timer settings with new period
+    TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
+    TIM_TimeBaseStructure.TIM_Period = new_period;
+    TIM_TimeBaseStructure.TIM_Prescaler = (uint16_t)((168000000 / 2) / TIM_CLOCK) - 1;
+    TIM_TimeBaseStructure.TIM_ClockDivision = 0;
+    TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+
+    TIM_TimeBaseInit(HW_ICU_TIMER, &TIM_TimeBaseStructure);
+
+    // Set duty cycle as before
+    float us = 100; // 2.5 micro seconds is the minimum pulse width for the stepper PPM input, this gives some margin. Not sure accuracy of clock and app to do 2.5us
+	
+	// (float)SERVO_OUT_PULSE_MIN_US*.5 + 0.5 *
+    //             (float)(SERVO_OUT_PULSE_MAX_US - SERVO_OUT_PULSE_MIN_US*.5);
+    // us *= (float)TIM_CLOCK / 1000000.0;
+
+    if (HW_ICU_CHANNEL == ICU_CHANNEL_1) {
+        HW_ICU_TIMER->CCR1 = (uint32_t)us;
+    } else if (HW_ICU_CHANNEL == ICU_CHANNEL_2) {
+        HW_ICU_TIMER->CCR2 = (uint32_t)us;
+    }
 }

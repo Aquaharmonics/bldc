@@ -86,6 +86,7 @@ void app_set_configuration(app_configuration *conf) {
 	if (app_changed) {
 		if (appconf.app_to_use != APP_PPM &&
 				appconf.app_to_use != APP_PPM_UART &&
+				appconf.app_to_use != APP_BALANCE  && // Balance app as basis for WEC app uses servo_simple
 				appconf.servo_out_enable) {
 			servodec_stop();
 			servo_simple_init();
@@ -124,11 +125,18 @@ void app_set_configuration(app_configuration *conf) {
 			break;
 
 		case APP_BALANCE:
+			
 			app_balance_start();
 			if(appconf.imu_conf.type == IMU_TYPE_INTERNAL){
 				hw_stop_i2c();
 				app_uartcomm_start(UART_PORT_COMM_HEADER);
+				
+				
 			}
+			//app_nunchuk_start();
+			servodec_stop();
+			servo_simple_init();
+
 			break;
 
 		case APP_PAS:

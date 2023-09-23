@@ -33,6 +33,11 @@
 #include "comm_can.h"
 #include "terminal.h"
 #include "digital_filter.h"
+// #include "utils.h"
+
+
+// adding this include to get servo function for tidal compensation
+#include "servo_simple.h"
 
 
 #include <math.h>
@@ -94,6 +99,12 @@ static float motor_current;
 static float motor_position;
 static float adc1, adc2;
 static SwitchState switch_state;
+static float app_nunchuk_get_decoded_y(void);
+static float ReadSensorTimeStamp;//maybe this should be a uint32_t
+static float TidalCompSetpoint;
+static float TidalCompSetpointPulses;
+static float TidalCompSetpointTime;
+static float ServoOut;
 
 // Rumtime state values
 static BalanceState state;
@@ -177,6 +188,7 @@ void app_balance_configure(balance_config *conf, imu_config *conf2) {
 	// Reset loop time variables
 	last_time = 0;
 	filtered_loop_overshoot = 0;
+	
 }
 
 void app_balance_start(void) {
@@ -202,6 +214,7 @@ void app_balance_start(void) {
 	app_thread = chThdCreateStatic(balance_thread_wa, sizeof(balance_thread_wa), NORMALPRIO, balance_thread, NULL);
 }
 
+
 void app_balance_stop(void) {
 	if(app_thread != NULL){
 		chThdTerminate(app_thread);
@@ -217,6 +230,7 @@ float app_balance_get_pid_output(void) {
 }
 float app_balance_get_pitch_angle(void) {
 	return pitch_angle;
+
 }
 float app_balance_get_roll_angle(void) {
 	return roll_angle;
@@ -246,6 +260,83 @@ float app_balance_get_debug2(void) {
 	return app_balance_get_debug(debug_render_2);
 }
 
+// adding PTO Position Buffer. This will be used to determine average PTO position and then use 
+//that to determine the amount for the tidal compensation to move the PTO position to .
+// Declare the array outside main
+#define PTO_POS_BUFFER_1_SIZE 1000
+#define PTO_POS_BUFFER_2_SIZE 10*60
+#define PTO_POS_BUFFER_3_SIZE 1
+float  PTOPos1Buffer[PTO_POS_BUFFER_1_SIZE];
+float  PTOPos2Buffer[PTO_POS_BUFFER_2_SIZE];
+float  PTOPos3Buffer[PTO_POS_BUFFER_3_SIZE];
+
+static float PTOPos1Averaged =0;
+static float PTOPos2Averaged =0;
+static float PTOPos3Averaged =0;
+
+int PTOPos1BufferIndex = 0;
+int PTOPos2BufferIndex = 0;
+int PTOPos3BufferIndex = 0;
+
+
+// Function to apply a simple moving average filter
+
+	static float simpleMovingAverage(float *buffer, int length) {
+    float sum = 0;
+    for (int i = 0; i < length; i++) {
+        sum += buffer[i];
+    }
+    return sum / length;
+}
+
+
+#define WINDOW_SIZE 3 // Size of the filtering window (odd number)
+#define POLY_DEGREE 2 // Degree of the fitting polynomial
+
+// static void apply_kalman_kp(data *d){
+// 	// Apply a broad Kalman filter to d->proportional
+// 	float Q1 = .0042; //.005 //0.022;			//the noise in the system
+// 	float R1 = .7; //0.617;					//the noise in the system
+// 	float K1;
+// 	float P1;
+// 	float P_temp1;
+// 	float x_temp_est1;
+// 	float x_est1;
+// 	float z_measured1; //the 'noisy' value we measured	
+// 	x_temp_est1 = d->x_est_last1; 			//do a prediction
+// 	P_temp1 = d->P_last1 + Q1;
+// 	K1 = P_temp1 * (1.0/(P_temp1 + R1));		//calculate the Kalman gain
+// 	z_measured1 = d->proportional;					//measure
+// 	x_est1 = x_temp_est1 + K1 * (z_measured1 - x_temp_est1); 	//correct
+// 	P1 = (1- K1) * P_temp1;
+// 	d->P_last1 = P1;			//update our last's
+// 	d->x_est_last1 = x_est1;		//update our last's
+	
+// 	//Apply a more precise filter for pitch velocity
+// 	float Q2 = .08; //.08 //.1 //0.022;			//the noise in the system
+// 	float R2 = 1; //0.617;	//the noise in the system
+// 	float K2;
+// 	float P2;
+// 	float P_temp2;
+// 	float x_temp_est2;
+// 	float x_est2;
+// 	float z_measured2; //the 'noisy' value we measured	
+// 	x_temp_est2 = d->x_est_last2; 			//do a prediction
+// 	P_temp2 = d->P_last2 + Q2;
+// 	K2 = P_temp2 * (1.0/(P_temp2 + R2));		//calculate the Kalman gain
+// 	z_measured2 = d->proportional - d->last_proportional;		//measure
+// 	x_est2 = x_temp_est2 + K2 * (z_measured2 - x_temp_est2); 	//correct
+// 	P2 = (1- K2) * P_temp2;
+// 	d->P_last2 = P2;			//update our last's
+// 	d->x_est_last2 = x_est2;		//update our last's			
+
+// 	d->prop_smooth = x_est1 + x_est2 * 0.9;	//smoothed d->proportional, plus an estimate for the next step based on smoothed pitch speed	
+
+
+
+
+
+
 // Internal Functions
 static void reset_vars(void){
 	// Clear accumulated values.
@@ -274,6 +365,7 @@ static void reset_vars(void){
 	last_time = 0;
 	diff_time = 0;
 	brake_timeout = 0;
+	//app_nunchuk_get_decoded_y()=0;
 }
 
 static float get_setpoint_adjustment_step_size(void){
@@ -543,6 +635,7 @@ static void set_current(float current, float yaw_current){
 	}else if(current < 0 && current < mc_interface_get_configuration()->l_current_min){
 		current = mc_interface_get_configuration()->l_current_min;
 	}
+	i
 	// Reset the timeout
 	timeout_reset();
 	// Set current
@@ -554,6 +647,7 @@ static void set_current(float current, float yaw_current){
 		// Can bus
 		for (int i = 0;i < CAN_STATUS_MSGS_TO_STORE;i++) {
 			can_status_msg *msg = comm_can_get_status_msg_index(i);
+			
 
 			if (msg->id >= 0 && UTILS_AGE_S(msg->rx_time) < MAX_CAN_AGE) {
 				comm_can_set_current_off_delay(msg->id, current - yaw_current, motor_timeout);// Assume 2 motors, i don't know how to steer 3 anyways
@@ -574,6 +668,12 @@ static THD_FUNCTION(balance_thread, arg) {
 	while (!chThdShouldTerminateX()) {
 		// Update times
 		current_time = chVTGetSystemTimeX();
+
+
+		float dt = UTILS_AGE_S(ReadSensorTimeStamp); //time elapsed since last sensor read, in seconds.
+		//dt_check=dt;
+		ReadSensorTimeStamp = chVTGetSystemTimeX();
+
 		if(last_time == 0){
 		  last_time = current_time;
 		}
@@ -584,7 +684,233 @@ static THD_FUNCTION(balance_thread, arg) {
 			loop_overshoot = diff_time - (loop_time - roundf(filtered_loop_overshoot));
 			filtered_loop_overshoot = loop_overshoot_alpha * loop_overshoot + (1-loop_overshoot_alpha)*filtered_loop_overshoot;
 		}
+		
+		// Function to apply a simple moving average filter
+		//Apply scaling to ADC1. For now 0.89V and 3.3V is the full scale range. Range is 2.41 volts.
+		//This equates to 30 degrees. Therefore, 1V is 12.44 degrees. For the midrange to be zero degrees, we must offset the reading. 
+		// Midrange is 2.41/2=1.205V+.89=2.095V, which is zero degrees. (2.095-adc1)*12.44=PTO angle in degrees.
 
+		//PTOPos1Buffer[PTOPos1BufferIndex] =(2.095-adc1)*12.44;
+
+		PTOPos1Averaged=(2.095-adc1)*12.44;
+		PTOPos1BufferIndex = (PTOPos1BufferIndex + 1) % PTO_POS_BUFFER_1_SIZE;
+		// PTOPos1Averaged=simpleMovingAverage( PTOPos1Buffer ,PTO_POS_BUFFER_1_SIZE);
+
+
+		// PTOPos2Buffer[PTOPos2BufferIndex] =PTOPos1Averaged;
+		// PTOPos2BufferIndex = (PTOPos2BufferIndex + 1) % PTO_POS_BUFFER_2_SIZE;
+		// PTOPos2Averaged=simpleMovingAverage( PTOPos2Buffer ,PTO_POS_BUFFER_2_SIZE);
+		
+
+		// PTOPos3Buffer[PTOPos3BufferIndex] =PTOPos2Averaged;
+		// PTOPos3BufferIndex = (PTOPos3BufferIndex + 1) % PTO_POS_BUFFER_3_SIZE;
+		// PTOPos3Averaged=simpleMovingAverage( PTOPos3Buffer ,PTO_POS_BUFFER_3_SIZE);
+
+		PTOPos2Buffer[PTOPos2BufferIndex]=UTILS_LP_MOVING_AVG_APPROX(PTOPos2Averaged, PTOPos1Averaged, PTO_POS_BUFFER_1_SIZE);
+
+
+		//PTOPos2Buffer[PTOPos2BufferIndex] =PTOPos1Averaged;
+		PTOPos2BufferIndex = (PTOPos2BufferIndex + 1) % PTO_POS_BUFFER_2_SIZE;
+		PTOPos3Averaged=simpleMovingAverage( PTOPos2Buffer,PTO_POS_BUFFER_2_SIZE);
+
+		// //Calculate the rolling average 
+		// 		if (PTOPos2BufferIndex % 60 == 0) {
+		// 			PTOPos2BufferIndex = PTOPos2BufferIndex / 60;
+		// 			PTOPos3Buffer[PTOPos3BufferIndex] = simpleMovingAverage( PTOPos2Buffer ,PTO_POS_BUFFER_2_SIZE);
+		// 		}
+
+		
+		
+
+		
+
+
+
+		
+		
+		
+		//PTOPos2Averaged=simpleMovingAverage( avgDataBuffer ,PTO_POS_BUFFER_2_SIZE);
+
+		TidalCompSetpoint=PTOPos3Averaged;//average angular position in degrees.
+
+
+
+
+
+
+
+		//#define SAMPLE_RATE_HZ 1000
+		// #define ROLLING_INTERVAL 1  // Rolling average interval in seconds
+
+		// // Define buffer sizes based on your memory constraints
+		// //#define RAW_DATA_BUFFER_SIZE (SAMPLE_RATE_HZ * ROLLING_INTERVAL)
+		// //#define AVG_DATA_BUFFER_SIZE (20 * 60)  // 20 minutes at 1 sample/second
+
+		// float rawDataBuffer[PTO_POS_BUFFER_1_SIZE];
+		// float avgDataBuffer[PTO_POS_BUFFER_2_SIZE];
+		// int rawDataIndex = 0;
+		
+		// // Function to calculate rolling average
+		// float calculateRollingAverage(float* buffer, int bufferSize) {
+		// 	float sum = 0;
+		// 	for (int i = 0; i < bufferSize; i++) {
+		// 		sum += buffer[i];
+		// 	}
+		// 	return sum / bufferSize;
+		// }
+		// 		float newData =(2.095-adc1)*12.44;
+
+		// 		// Store the new data point in the raw data buffer
+		// 		rawDataBuffer[rawDataIndex] = newData;
+		// 		rawDataIndex = (rawDataIndex + 1) % PTO_POS_BUFFER_1_SIZE;
+
+		// 		// Calculate the rolling average every second
+		// 		//if (rawDataIndex % 1000 == 0) {
+		// 			int avgDataIndex = rawDataIndex / 1000;
+		// 			avgDataBuffer[avgDataIndex] = calculateRollingAverage(rawDataBuffer, PTO_POS_BUFFER_1_SIZE);
+		// 		//}
+
+
+
+
+				
+
+
+
+
+
+
+
+		//servo set for 200 pulses per revolution. 
+		//Setpoint drives frequency. 12 kHz would be 1200 rev/min or 20 rev/sec. 200 pulses/rev * 20 rev/sec = 4000 pulses/sec.
+
+		//We want to move a set number of pulses. Lets say we do it slowly for now, so fix the frequency to something smallish.
+		//Lets say move 100 rev/min. This would be 1.67 rev/sec. 200 pulses/rev * 1.67 rev/sec = 334 pulses/sec=334Hz.
+
+		//Servo scaling is set from zero to one input, with 4000 pulses/sec being the max. So, 334/4000=0.0835.
+
+		//One revolution = 360 degrees, so 1 degree = 1/360=0.0027778 rev. 0.0027778*200 pulses/rev=0.5556 pulses/degree.
+		// The TidalCompSetpoint should be in degrees, so multiply by 0.5556 to get pulses. Then multiply by 0.0835 to get servo input.
+
+		//There is a gear ratio involved with the worm drive. balance_conf.ki2 will be repuposed to be the gear ratio. 
+		//This could be say, 100:1. For now we assume 1:1.
+
+		// move_steppermotor( Direction, Speed, Time)
+		// 11:41
+		// or it could be (Direction, Speed, Distance)
+		// and then a final layer,
+		// take long running average linear position
+		// on a very long interval, if average position is not 0, move stepper motor equal to (or opposite?) to the average
+
+		TidalCompSetpointPulses=round(TidalCompSetpoint*0.5556*balance_conf.ki2);
+		float TidalCompSetpointFrequency=334.0;//frequency in Hz to move the setpoint.
+		TidalCompSetpointTime=TidalCompSetpointPulses/TidalCompSetpointFrequency;//time in seconds to move the setpoint.
+
+		// if (app_nunchuk_get_decoded_y()>.05) {
+		// 	servo_simple_set_output((app_nunchuk_get_decoded_y()*balance_conf.ki2))
+		// 	}else if (app_nunchuk_get_decoded_y()<.05) {
+		// 	if (TidalCompSetpointTime > 0) {
+		// 	(ReadSensorTimeStamp+TidalCompSetpointTime<ReadSensorTimeStamp) 
+		// 	servo_simple_set_output((TidalCompSetpointFrequency/4000)*balance_conf.ki2);
+		// 	} else {
+		// 	servo_simple_set_output(0);
+		// 	}
+		// }
+		
+
+			// if(fabsf(TidalCompSetpointPulses) < turntilt_step_size){
+			// turntilt_interpolated = turntilt_target;
+			// }else if (turntilt_target - turntilt_interpolated > 0){
+			// 	turntilt_interpolated += turntilt_step_size;
+			// }else{
+			// 	turntilt_interpolated -= turntilt_step_size;
+			// }
+			// setpoint += turntilt_interpolated;
+
+
+		// if (app_nunchuk_get_decoded_y() > 0.05) {
+		// servo_simple_set_output(app_nunchuk_get_decoded_y() * balance_conf.ki2);
+		// 	if (TidalCompSetpointTime > 0) {
+		// 		if (ReadSensorTimeStamp + TidalCompSetpointTime < ReadSensorTimeStamp) {
+		// 			servo_simple_set_output((TidalCompSetpointFrequency / 4000) * balance_conf.ki2);
+		// 		} else {
+		// 			servo_simple_set_output(0);
+		// 		}
+		// 	}
+		// }
+
+
+
+		// 	if (TidalCompSetpointTime > 0) {
+		// 	void moveMotorForTime(uint32_t duration_s) {
+		// 	uint32_t startTime = ReadSensorTimeStamp;
+		// 	servo_simple_set_output((TidalCompSetpointFrequency / 4000) * balance_conf.ki2);
+		// 	// Calculate the elapsed time
+		// 	uint32_t currentTime = ReadSensorTimeStamp;
+		// 	uint32_t elapsedTime = currentTime - startTime;
+				
+		// 		// Check if the desired duration has passed
+		// 		if (elapsedTime >= duration_ms) {
+		// 			// Stop the motor 
+		// 			servo_simple_set_output(0);
+					
+		// 		}
+			
+		// }
+			if (TidalCompSetpointTime > 0.1) {
+			uint32_t startTime = ReadSensorTimeStamp;
+			servo_simple_set_output((TidalCompSetpointFrequency / 4000) * balance_conf.ki2);
+			// Calculate the elapsed time
+			uint32_t currentTime = ReadSensorTimeStamp;
+			uint32_t elapsedTime = currentTime - startTime;
+				// Check if the desired duration has passed
+				if (elapsedTime >= TidalCompSetpointTime) {
+					// Stop the motor 
+					servo_simple_set_output(0);
+				}
+				//ServoOut=servo_simple_set_output(void);
+		}
+
+		// Call the moveMotorForTime function with the desired duration
+			//moveMotorForTime(TidalCompSetpointTime);
+		
+		
+			// // Call the moveMotorForTime function with the desired duration
+			// moveMotorForTime(TidalCompSetpointTime);
+			
+			
+
+			
+		//}
+
+		// if(balance_conf.fault_adc1 == 0 && balance_conf.fault_adc2 == 0){ // No Switch
+		// 	switch_state = ON;
+		// }else if(balance_conf.fault_adc2 == 0){ // Single switch on ADC1
+		// 	if(adc1 > balance_conf.fault_adc1){
+		// 		switch_state = ON;
+		// 	} else {
+		// 		switch_state = OFF;
+		// 	}
+
+		//servo_simple_set_output((app_nunchuk_get_decoded_y()*balance_conf.ki2));
+
+
+//     // Call the moveServo function to move the servo
+//     moveServo(desiredAngle, speedPPM);
+
+//     return 0;
+// }	
+
+
+
+
+
+
+
+
+		
+
+		
 		// Read values for GUI
 		motor_current = mc_interface_get_tot_current_directional_filtered();
 		motor_position = mc_interface_get_pid_pos_now();
@@ -652,21 +978,21 @@ static THD_FUNCTION(balance_thread, arg) {
 		switch(state){
 			case (STARTUP):
 				// Disable output
-				brake();
-				if(imu_startup_done()){
-					reset_vars();
-					state = FAULT_STARTUP; // Trigger a fault so we need to meet start conditions to start
-				}
+				// brake();
+				// if(imu_startup_done()){
+				// 	reset_vars();
+				// 	state = FAULT_STARTUP; // Trigger a fault so we need to meet start conditions to start
+				// }
 				break;
 			case (RUNNING):
-			case (RUNNING_TILTBACK_DUTY):
-			case (RUNNING_TILTBACK_HIGH_VOLTAGE):
-			case (RUNNING_TILTBACK_LOW_VOLTAGE):
+			// case (RUNNING_TILTBACK_DUTY):
+			// case (RUNNING_TILTBACK_HIGH_VOLTAGE):
+			// case (RUNNING_TILTBACK_LOW_VOLTAGE):
 
-				// Check for faults
-				if(check_faults(false)){
-					break;
-				}
+				// // Check for faults
+				// if(check_faults(false)){
+				// 	break;
+				// }
 
 				// Calculate setpoint and interpolation
 				calculate_setpoint_target();
@@ -753,6 +1079,11 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				// Output to motor
 				set_current(pid_value, yaw_pid_value);
+				
+
+				//servo_simple_init();
+				//servo_simple_set_output(adc1);
+
 				break;
 			case (FAULT_ANGLE_PITCH):
 			case (FAULT_ANGLE_ROLL):
@@ -865,21 +1196,21 @@ static void terminal_experiment(int argc, const char **argv) {
 static float app_balance_get_debug(int index){
 	switch(index){
 		case(1):
-			return motor_position;
+			return ServoOut;
 		case(2):
 			return setpoint;
 		case(3):
-			return torquetilt_filtered_current;
+			return (app_nunchuk_get_decoded_y()*balance_conf.ki2);
 		case(4):
-			return derivative;
+			return PTOPos1Averaged;
 		case(5):
-			return last_pitch_angle - pitch_angle;
+			return PTOPos2Averaged;
 		case(6):
-			return motor_current;
+			return PTOPos3Averaged;
 		case(7):
-			return erpm;
+			return TidalCompSetpointPulses;
 		case(8):
-			return abs_erpm;
+			return TidalCompSetpointTime;
 		case(9):
 			return loop_time;
 		case(10):
