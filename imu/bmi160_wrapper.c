@@ -61,33 +61,41 @@ static bool reset_init_bmi(BMI_STATE *s) {
 
 	bmi160_init(&(s->sensor));
 
-	s->sensor.accel_cfg.range = BMI160_ACCEL_RANGE_16G;
+	//Alex changes. Lowered the ranges to 2G and 125DPS. This should give better resolution
+	//for the measuerment ranges we care about for balance boards.
+	//In testing the IMU on the board, I found it hard to get the board to saturate the 2G range
+	// for the accelerometer, and hard to saturate the 125DPS range for the gyro.
+
+
+	s->sensor.accel_cfg.range = BMI160_ACCEL_RANGE_2G;
 	s->sensor.accel_cfg.power = BMI160_ACCEL_NORMAL_MODE;
 
-	s->sensor.gyro_cfg.range = BMI160_GYRO_RANGE_2000_DPS;
+	s->sensor.gyro_cfg.range = BMI160_GYRO_RANGE_125_DPS;
 	s->sensor.gyro_cfg.power = BMI160_GYRO_NORMAL_MODE;
+
+	// Note for other future IMU mods: maybe do any other initilization here????
 
 	if(s->rate_hz <= 25){
 		s->sensor.accel_cfg.odr = BMI160_ACCEL_ODR_25HZ;
-		s->sensor.gyro_cfg.odr = BMI160_GYRO_ODR_25HZ;
+		s->sensor.gyro_cfg.odr = BMI160_GYRO_ODR_50HZ;
 	}else if(s->rate_hz <= 50){
 		s->sensor.accel_cfg.odr = BMI160_ACCEL_ODR_50HZ;
-		s->sensor.gyro_cfg.odr = BMI160_GYRO_ODR_50HZ;
+		s->sensor.gyro_cfg.odr = BMI160_GYRO_ODR_100HZ;
 	}else if(s->rate_hz <= 100){
 		s->sensor.accel_cfg.odr = BMI160_ACCEL_ODR_100HZ;
-		s->sensor.gyro_cfg.odr = BMI160_GYRO_ODR_100HZ;
+		s->sensor.gyro_cfg.odr = BMI160_GYRO_ODR_200HZ;
 	}else if(s->rate_hz <= 200){
 		s->sensor.accel_cfg.odr = BMI160_ACCEL_ODR_200HZ;
-		s->sensor.gyro_cfg.odr = BMI160_GYRO_ODR_200HZ;
+		s->sensor.gyro_cfg.odr = BMI160_GYRO_ODR_400HZ;
 	}else if(s->rate_hz <= 400){
 		s->sensor.accel_cfg.odr = BMI160_ACCEL_ODR_400HZ;
-		s->sensor.gyro_cfg.odr = BMI160_GYRO_ODR_400HZ;
+		s->sensor.gyro_cfg.odr = BMI160_GYRO_ODR_800HZ;
 	}else if(s->rate_hz <= 800){
 		s->sensor.accel_cfg.odr = BMI160_ACCEL_ODR_800HZ;
-		s->sensor.gyro_cfg.odr = BMI160_GYRO_ODR_800HZ;
+		s->sensor.gyro_cfg.odr = BMI160_GYRO_ODR_1600HZ;
 	}else{
 		s->sensor.accel_cfg.odr = BMI160_ACCEL_ODR_1600HZ;
-		s->sensor.gyro_cfg.odr = BMI160_GYRO_ODR_1600HZ;
+		s->sensor.gyro_cfg.odr = BMI160_GYRO_ODR_3200HZ;
 	}
 
 	if(s->filter == IMU_FILTER_LOW){
@@ -96,8 +104,8 @@ static bool reset_init_bmi(BMI_STATE *s) {
 	}else if(s->filter == IMU_FILTER_MEDIUM){
 		s->sensor.accel_cfg.bw = BMI160_ACCEL_BW_OSR2_AVG2;
 		s->sensor.gyro_cfg.bw = BMI160_GYRO_BW_OSR2_MODE;
-		s->sensor.accel_cfg.odr = fmin(s->sensor.accel_cfg.odr + 1, BMI160_ACCEL_ODR_1600HZ);
-		s->sensor.gyro_cfg.odr = fmin(s->sensor.gyro_cfg.odr + 1, BMI160_GYRO_ODR_3200HZ);
+		s->sensor.accel_cfg.odr = fmin(s->sensor.accel_cfg.odr + 1, BMI160_ACCEL_ODR_800HZ);
+		s->sensor.gyro_cfg.odr = fmin(s->sensor.gyro_cfg.odr + 1, BMI160_GYRO_ODR_1600HZ);
 	}else if(s->filter == IMU_FILTER_HIGH){
 		s->sensor.accel_cfg.bw = BMI160_ACCEL_BW_OSR4_AVG1;
 		s->sensor.gyro_cfg.bw = BMI160_GYRO_BW_OSR4_MODE;
@@ -129,7 +137,11 @@ static THD_FUNCTION(bmi_thread, arg) {
 	for(;;) {
 		struct bmi160_sensor_data accel;
 		struct bmi160_sensor_data gyro;
+		// To read both Accel and Gyro data along with time based on the BMI160 datasheet and the bmi160_defs/h 
+		// int8_t res = bmi160_get_sensor_data((BMI160_ACCEL_SEL | BMI160_GYRO_SEL | BMI160_TIME_SEL), 
+		// 		&accel, &gyro, &(s->sensor));
 
+			// original code, not sure that this is correct to get time stamps out of accelerometer based on the BMI160 datasheet and the bmi160_defs/h 
 		int8_t res = bmi160_get_sensor_data((BMI160_ACCEL_SEL | BMI160_GYRO_SEL),
 				&accel, &gyro, &(s->sensor));
 
@@ -137,21 +149,36 @@ static THD_FUNCTION(bmi_thread, arg) {
 			chThdSleepMilliseconds(5);
 			continue;
 		}
+		
+		//Note: this appears to be the  first manipulation of the IMU data, as in, the data is still in the IMU's native units. 
 
+		//Note: this appears to be the  first manipulation of the IMU data
+
+		// Alex changes. Adjusted full scale range values here as well.
+		
 		float tmp_accel[3], tmp_gyro[3], tmp_mag[3];
+		//uint32_t accel_sensor_time=0; 
+		//uint32_t DT=0;
+		//uint32_t last_accel_sensor_time=0;
+		
+		
+		tmp_accel[0] = (float)accel.x * 2.0 / 32768.0;
+		tmp_accel[1] = (float)accel.y * 2.0 / 32768.0;
+		tmp_accel[2] = (float)accel.z * 2.0 / 32768.0;
 
-		tmp_accel[0] = (float)accel.x * 16.0 / 32768.0;
-		tmp_accel[1] = (float)accel.y * 16.0 / 32768.0;
-		tmp_accel[2] = (float)accel.z * 16.0 / 32768.0;
-
-		tmp_gyro[0] = (float)gyro.x * 2000.0 / 32768.0;
-		tmp_gyro[1] = (float)gyro.y * 2000.0 / 32768.0;
-		tmp_gyro[2] = (float)gyro.z * 2000.0 / 32768.0;
-
+		tmp_gyro[0] = (float)gyro.x * 125.0 / 32768.0;
+		tmp_gyro[1] = (float)gyro.y * 125.0 / 32768.0;
+		tmp_gyro[2] = (float)gyro.z * 125.0 / 32768.0;
+		
 		memset(tmp_mag, 0, sizeof(tmp_mag));
+		// uint32_t accel_sensor_time = accel.sensortime;
+		// //uint32_t DT  = (uint32_t)accel.sensortime;
+		// //u_int32_t DT= (accel_sensor_time -accel_sensor_time);
+		// //last_accel_sensor_time = accel.sensortime;
 
 		if (s->read_callback) {
-			s->read_callback(tmp_accel, tmp_gyro, tmp_mag);
+			//s->read_callback(tmp_accel, tmp_gyro, tmp_mag, accel_sensor_time); 
+			s->read_callback(tmp_accel, tmp_gyro, tmp_mag); 
 		}
 
 		if (s->should_stop) {
@@ -174,3 +201,89 @@ static THD_FUNCTION(bmi_thread, arg) {
 		}
 	}
 }
+// /*!
+//  * @brief This API reads accel and gyro data along with sensor time
+//  * if time is requested by user.
+//  *  Kindly refer the user guide(README.md) for more info.
+//  */
+// static int8_t get_accel_gyro_data(uint8_t len,
+//                                   struct bmi160_sensor_data *accel,
+//                                   struct bmi160_sensor_data *gyro,
+//                                   const struct bmi160_dev *dev)
+// {
+//     int8_t rslt;
+//     uint8_t idx = 0;
+//     uint8_t data_array[15] = { 0 };
+//     uint8_t time_0 = 0;
+//     uint16_t time_1 = 0;
+//     uint32_t time_2 = 0;
+//     uint8_t lsb;
+//     uint8_t msb;
+//     int16_t msblsb;
+
+//     /* read both accel and gyro sensor data
+//      * along with time if requested */
+//     rslt = bmi160_get_regs(BMI160_GYRO_DATA_ADDR, data_array, 12 + len, dev);
+//     if (rslt == BMI160_OK)
+//     {
+//         /* Gyro Data */
+//         lsb = data_array[idx++];
+//         msb = data_array[idx++];
+//         msblsb = (int16_t)((msb << 8) | lsb);
+//         gyro->x = msblsb; /* gyro X axis data */
+//         lsb = data_array[idx++];
+//         msb = data_array[idx++];
+//         msblsb = (int16_t)((msb << 8) | lsb);
+//         gyro->y = msblsb; /* gyro Y axis data */
+//         lsb = data_array[idx++];
+//         msb = data_array[idx++];
+//         msblsb = (int16_t)((msb << 8) | lsb);
+//         gyro->z = msblsb; /* gyro Z axis data */
+//         /* Accel Data */
+//         lsb = data_array[idx++];
+//         msb = data_array[idx++];
+//         msblsb = (int16_t)((msb << 8) | lsb);
+//         accel->x = (int16_t)msblsb; /* accel X axis data */
+//         lsb = data_array[idx++];
+//         msb = data_array[idx++];
+//         msblsb = (int16_t)((msb << 8) | lsb);
+//         accel->y = (int16_t)msblsb; /* accel Y axis data */
+//         lsb = data_array[idx++];
+//         msb = data_array[idx++];
+//         msblsb = (int16_t)((msb << 8) | lsb);
+//         accel->z = (int16_t)msblsb; /* accel Z axis data */
+//         if (len == 3)
+//         {
+//             time_0 = data_array[idx++];
+//             time_1 = (uint16_t)(data_array[idx++] << 8);
+//             time_2 = (uint32_t)(data_array[idx++] << 16);
+//             accel->sensortime = (uint32_t)(time_2 | time_1 | time_0);
+//             gyro->sensortime = (uint32_t)(time_2 | time_1 | time_0);
+//         }
+//         else
+//         {
+//             accel->sensortime = 0;
+//             gyro->sensortime = 0;
+//         }
+//     }
+//     else
+//     {
+//         rslt = BMI160_E_COM_FAIL;
+//     }
+
+//     return rslt;
+// }
+
+
+// struct bmi160_sensor_data accel, gyro;
+// int8_t result = get_accel_gyro_data(len, &accel, &gyro, &dev);
+// if (result == BMI160_OK) {
+//     // Access accelerometer data and sensor time
+//     int16_t accel_x = accel.x;
+//     int16_t accel_y = accel.y;
+//     int16_t accel_z = accel.z;
+//     uint32_t accel_sensor_time = accel.sensortime;
+//     // ... (process the data further)
+// } else {
+//     // Handle error
+// }
