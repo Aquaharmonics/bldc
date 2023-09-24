@@ -498,6 +498,51 @@ static void reset_vars(void){
     return sum / length;
 }
 
+//pitch_filtered = combinedFunction(pitch_filtered, balance_conf.yaw_kp, balance_conf.yaw_ki, balance_conf.yaw_kd,balance_conf.roll_steer_kp);
+float combinedFunction(float val, float degree_acc, float degree_brake, float threshold_positive, float threshold_negative) {
+    // Limit input value to the range of -20.0 to 20.0
+    float val_a = fabsf(val);
+    float degree;
+    float ret = 0.0;
+    float a = 0.0;  // Initialize 'a' to 0.0
+    float b = 0.0;  // Initialize 'b' to 0.0
+
+    // Determine the appropriate degree based on the sign of val
+    if (val >= 0.0) {
+        degree = degree_acc;
+        a = threshold_positive/powf(threshold_positive, degree);  // Calculate 'a' correctly
+    } else {
+        degree = degree_brake;
+        b = threshold_negative/powf(threshold_negative, degree);  // Calculate 'b' correctly
+    }
+
+    if (degree > 0) { // Exponential
+        if (val > 0.0 && val <= threshold_positive) {
+            // Linear component for positive x
+            return val;
+        } else if (val < 0.0 && val >= threshold_negative) {
+            // Linear component for negative x
+            return val;
+        } else {
+            // Non-linear component
+            if (val > 0.0 && val > threshold_positive) {
+                ret = a * powf(val_a, degree);
+            }
+            if (val < 0.0 && val < threshold_negative) {
+                ret = -b * powf(val_a, degree);  // Use 'b' for negative values
+            }
+        }
+    }// else { // Linear
+    //     ret = val_a;
+    // }
+
+    // if (val < 0.0) {
+    //     ret = -ret;
+    // }
+
+    return ret;
+}
+
 // static void apply_kalman(float d){
 	
 // 	// Apply a broad Kalman filter 
@@ -1225,9 +1270,11 @@ static THD_FUNCTION(balance_thread, arg) {
 				
 
 
-				if(balance_conf.kd_pt1_lowpass_frequency > 0){
+				//if(balance_conf.kd_pt1_lowpass_frequency > 0){
 				//x_temp_est1 = x_est_last1; 			//do a prediction
 				//P_temp1 = P_last1 + Q1;
+				
+				
 				K1 = P_temp1 * (1.0/(P_temp1 + R1));		//calculate the Kalman gain
 				z_measured1 = pitch_angle;					//measure
 				x_est1 = x_temp_est1 + K1 * (z_measured1 - x_temp_est1); 	//correct
@@ -1235,9 +1282,11 @@ static THD_FUNCTION(balance_thread, arg) {
 				//P_last1 = P1;			//update our last's
 				//x_est_last1 = x_est1;		//update our last's
 				pitch_filtered = x_est1;
-				} else {
-					pitch_filtered = pitch_angle;
-				}	
+				
+				
+				//} else {
+					//pitch_filtered = pitch_angle;
+				//}	
 
 				
 
@@ -1256,12 +1305,24 @@ static THD_FUNCTION(balance_thread, arg) {
 					//pitch_filtered = utils_throttle_curve(pitch_filtered, balance_conf.yaw_kp, balance_conf.yaw_ki, balance_conf.yaw_kd)*balance_conf.roll_steer_kp;
 
 
-				if(balance_conf.yaw_kd > -1){
-					pitch_filtered = utils_throttle_curve(pitch_filtered, balance_conf.yaw_ki, balance_conf.yaw_kp, balance_conf.yaw_kd);	
-				} else {
-					pitch_filtered = pitch_angle;
-				}	
+				// if(balance_conf.yaw_kd > -1){
+				// 	pitch_filtered = utils_throttle_curve(pitch_filtered, balance_conf.yaw_ki, balance_conf.yaw_kp, balance_conf.yaw_kd);	
+				// } else {
+				// 	pitch_filtered = pitch_angle;
+				// }	
+				
 
+
+				
+			
+				// Calculate the combined output
+
+				//pitch_filtered = combinedFunction(float val, float degree_acc, float degree_brake, float threshold_positive, float threshold_negative)
+				pitch_filtered = combinedFunction(pitch_filtered, balance_conf.yaw_kp, balance_conf.yaw_ki, balance_conf.yaw_kd,balance_conf.roll_steer_kp);
+				
+				//   // Calculate the combined output
+   				//  float result = combinedFunction(x, threshold_positive, threshold_negative, degree);
+    
 				// // Do PID maths
 				proportional = setpoint - pitch_filtered;
 				// Apply deadzone
@@ -1294,7 +1355,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				// Xk = Current estimation
 				// Kk = Kalman gain
 				// Zk = Measured value
-				// Xk–1 = Previous estimation
+				// Xkï¿½1 = Previous estimation
 
 				// 				The filter is the basic form of a one-dimensional time-update step in a discrete-time Kalman filter. 
 				// It's used to estimate the state of a system based on measurements while incorporating a balance between the prediction from the previous 
@@ -1309,7 +1370,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				// // - **Zk**: This is the measured value at the current time step. It provides new information 
 				// about the true state of the system.
 
-				// // - **Xk–1**: This is the previous state estimate. It's the estimate from the previous time step
+				// // - **Xkï¿½1**: This is the previous state estimate. It's the estimate from the previous time step
 				//  before incorporating the new measurement.
 
 				// // The formula essentially combines the predicted state from the previous estimate with the measured value using
@@ -1399,15 +1460,18 @@ static THD_FUNCTION(balance_thread, arg) {
 				// 	derivative2 = derivative2;
 				// }
 
-				if(balance_conf.kd_pt1_highpass_frequency > 0){
+				//if(balance_conf.kd_pt1_highpass_frequency > 0){
+				
 				K2 = P_temp2 * (1.0/(P_temp2 + R2));		//calculate the Kalman gain
 				z_measured2 =derivative2;		//measure
 				x_est2 = x_temp_est2 + K2 * (z_measured2 - x_temp_est2); 	//correct
 				P2 = (1- K2) * P_temp2;
 				derivative2=x_est2;
-				} else {
-					derivative2 = derivative2;
-				}
+				
+				
+				//} else {
+					//derivative2 = derivative2;
+				//}
 				
 				//derivative2 = MIN(MAX(derivative2, -balance_conf.yaw_current_clamp), balance_conf.yaw_current_clamp);
 
@@ -1484,29 +1548,7 @@ static THD_FUNCTION(balance_thread, arg) {
 				// }
 
 				
-				// if(balance_conf.kd2>0){
-				// if((erpm_per_second*balance_conf.turntilt_strength*balance_conf.turntilt_start_erpm*balance_conf.roll_steer_kp)/2000000>accel[0]){
-				// 	pid_value=balance_conf.turntilt_angle_limit*pid_value_1;
-				// }
-				// if(-(erpm_per_second*balance_conf.turntilt_strength*balance_conf.turntilt_start_erpm*balance_conf.roll_steer_erpm_kp)/2000000<-accel[0]){
-				// 	pid_value=balance_conf.turntilt_angle_limit*pid_value_1;
-				// }
-				// }else{
-				// 	pid_value=pid_value_1;
-				// }
-				
-				if(balance_conf.kd2>0){
-				if(erpm_filtered>1000 && (erpm_per_second*balance_conf.turntilt_strength*balance_conf.turntilt_start_erpm*balance_conf.roll_steer_kp)/2000000>balance_conf.turntilt_erpm_boost_end){
-					pid_value=pid_value_1*balance_conf.yaw_current_clamp;
-				}else{
 				pid_value=pid_value_1;
-				}
-				}else{
-					pid_value=pid_value_1;
-				}
-				// if(-(erpm_per_second*balance_conf.turntilt_strength*balance_conf.turntilt_start_erpm*balance_conf.roll_steer_erpm_kp)/2000000<-balance_conf.turntilt_erpm_boost_end){
-				// 	pid_value=balance_conf.turntilt_angle_limit*pid_value_1;
-				// }
 				
 				
 
@@ -1580,31 +1622,7 @@ static THD_FUNCTION(balance_thread, arg) {
 
 				
 
-				//balance_conf.turntilt_start_erpm                /// double velocityThreshold = 5.0;         // Adjust this threshold as needed
-				//balance_conf.turntilt_erpm_boost_end // int rapidOscillationThreshold = 5; // Adjust as needed
 				
-				
-
-
-				// Replace this with actual code to read motor velocity
-				// For example, if you're using an encoder:
-				
-					// //balance_conf.turntilt_strength
-					
-					// if (erpm_filtered  > balance_conf.turntilt_start_erpm  && last_erpm_filtered < -balance_conf.turntilt_start_erpm ) {
-					// 	oscillationCounter++;
-					// } else if (erpm_filtered < -balance_conf.turntilt_start_erpm  && last_erpm_filtered > balance_conf.turntilt_start_erpm ) {
-					// 	oscillationCounter++;
-					// } else {
-					// 	oscillationCounter = 0;
-					// }
-
-					// if (oscillationCounter >= balance_conf.turntilt_erpm_boost) {
-					// 	pid_value=0;
-					// } else {
-					// 	pid_value=pid_value;
-					// }
-					
 					
 				// Output to motor
 				set_current(pid_value, yaw_pid_value);
@@ -1613,23 +1631,6 @@ static THD_FUNCTION(balance_thread, arg) {
 			case (FAULT_ANGLE_ROLL):
 			case (FAULT_SWITCH_HALF):
 			case (FAULT_SWITCH_FULL):
-					// if (erpm_filtered  > balance_conf.turntilt_start_erpm  && last_erpm_filtered < -balance_conf.turntilt_start_erpm ) {
-					// 	oscillationCounter++;
-					// } else if (erpm_filtered < -balance_conf.turntilt_start_erpm  && last_erpm_filtered > balance_conf.turntilt_start_erpm ) {
-					// 	oscillationCounter++;
-					// } else {
-					// 	oscillationCounter = 0;
-					// }
-
-					// if (oscillationCounter >= balance_conf.turntilt_erpm_boost) {
-					// break;
-					// //brake();
-					// }
-					// else {
-					// 	break;
-					// }
-					// break;
-
 			case (FAULT_STARTUP):
 				// Check for valid startup position and switch state
 				if(fabsf(pitch_angle) < balance_conf.startup_pitch_tolerance && fabsf(roll_angle) < balance_conf.startup_roll_tolerance && switch_state == ON){

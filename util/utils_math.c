@@ -409,13 +409,13 @@ float utils_throttle_curve(float val, float curve_acc, float curve_brake, int mo
 	// Alex Changes: We don't want to limit the output to -1.0 to 1.0 for passing through the balance app.
 	// might just change this in the future by scaling in the balance app instead ...
 
-	// if (val < -1.0) {
-	// 	val = -1.0;
-	// }
+	if (val < -20.0) {
+		val = -20.0;
+	}
 
-	// if (val > 1.0) {
-	// 	val = 1.0;
-	// }
+	if (val > 20.0) {
+		val = 20.0;
+	}
 	
 	float val_a = fabsf(val);
 
